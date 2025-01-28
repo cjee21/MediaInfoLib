@@ -9550,8 +9550,125 @@ void File_Mpeg4::moov_udta_loci()
 {
     NAME_VERSION_FLAG("Location Information"); //3GP
 
-    //Parsing
-    Skip_XX(Element_Size-Element_Offset,                        "Data");
+    // Parsing
+    // 2-bytes language code
+    Skip_B2("Language");
+    // Variable-length null-terminated string for 'Location'
+    bool Utf8 = true;
+    if (Element_Offset + 2 <= Element_Size)
+    {
+        int16u Utf16;
+        Peek_B2(Utf16);
+        if (Utf16 == 0xFEFF)
+            Utf8 = false;
+    }
+    if (Utf8) {
+        int8u peek = -1;
+        int64u offset = 0;
+        while (peek != 0) {
+            Peek_B1(peek);
+            ++Element_Offset;
+            ++offset;
+        }
+        Element_Offset -= offset;
+        Skip_UTF8(offset, "LocationString");
+    }
+    else {
+        int16u peek = -1;
+        int64u offset = 0;
+        while (peek != 0) {
+            Peek_B2(peek);
+            Element_Offset+=2;
+            offset+=2;
+        }
+        Element_Offset -= offset;
+        Skip_UTF16B(offset, "LocationString");
+    }
+    // 1-byte role where 0=shooting, 1=real, 2=fictional and 3=>'reserved'
+    Skip_B1("Role");
+    // 3x 4-byte numbers for coordinates
+    int32u lat, lon, alt;
+    Get_B4(lon, "Longitude");
+    Get_B4(lat, "Latitude");
+    Get_B4(alt, "Altitude");
+    // Variable-length null-terminated string for 'Body'
+    Utf8 = true;
+    if (Element_Offset + 2 <= Element_Size)
+    {
+        int16u Utf16;
+        Peek_B2(Utf16);
+        if (Utf16 == 0xFEFF)
+            Utf8 = false;
+    }
+    if (Utf8) {
+        int8u peek = -1;
+        int64u offset = 0;
+        while (peek != 0) {
+            Peek_B1(peek);
+            ++Element_Offset;
+            ++offset;
+        }
+        Element_Offset -= offset;
+        Skip_UTF8(offset, "Body");
+    }
+    else {
+        int16u peek = -1;
+        int64u offset = 0;
+        while (peek != 0) {
+            Peek_B2(peek);
+            Element_Offset += 2;
+            offset += 2;
+        }
+        Element_Offset -= offset;
+        Skip_UTF16B(offset, "Body");
+    }
+    // Variable-length null-terminated string for 'Notes'
+    Utf8 = true;
+    if (Element_Offset + 2 <= Element_Size)
+    {
+        int16u Utf16;
+        Peek_B2(Utf16);
+        if (Utf16 == 0xFEFF)
+            Utf8 = false;
+    }
+    if (Utf8) {
+        int8u peek = -1;
+        int64u offset = 0;
+        while (peek != 0) {
+            Peek_B1(peek);
+            ++Element_Offset;
+            ++offset;
+        }
+        Element_Offset -= offset;
+        Skip_UTF8(offset, "Notes");
+    }
+    else {
+        int16u peek = -1;
+        int64u offset = 0;
+        while (peek != 0) {
+            Peek_B2(peek);
+            Element_Offset += 2;
+            offset += 2;
+        }
+        Element_Offset -= offset;
+        Skip_UTF16B(offset, "Notes");
+    }
+
+    // Process coordinate numbers
+    auto ProcessFixed32s = [](int32u data) -> double {
+        double scaledVal = static_cast<double>(data) / 0x10000;
+        return std::round(scaledVal * 1e5) / 1e5;
+    };
+
+    // Format coordinates as ISO-6709 string
+    char ISO6709_buff[50];
+    snprintf(ISO6709_buff, sizeof(ISO6709_buff), "%+09.5f%+010.5f%+.5f/", ProcessFixed32s(lat), ProcessFixed32s(lon), ProcessFixed32s(alt));
+    Ztring ISO6709{ ISO6709_buff };
+
+    // Filling
+    FILLING_BEGIN();
+        Fill(Stream_General, 0, "Recorded_Location", ISO6709);
+    FILLING_END();
 }
 
 //---------------------------------------------------------------------------

@@ -6,7 +6,7 @@
 
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //
-// Information about EXIF tags
+// Information about EXIF tags and MPF tags
 //
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -34,6 +34,36 @@ public:
 
     //In
     bool FromHeif = false;
+    int8u currentIFD;
+
+    //IFD Types
+    enum kind_of_ifd
+    {
+        // Exif
+        Kind_IFD0,
+        Kind_IFD1,
+        Kind_Exif,
+        Kind_GPS,
+        Kind_Interop,
+
+        // MPF
+        Kind_MPFIndex,
+        Kind_MPFAttributes,
+
+        // Special
+        Kind_ParsingThumbnail
+    };
+
+    //MP Entries
+    struct MPEntry
+    {
+        int32u ImgAttribute;
+        int32u ImgSize;
+        int32u ImgOffset;
+        int16u DependentImg1EntryNo;
+        int16u DependentImg2EntryNo;
+    };
+    std::vector<MPEntry> MPEntries;
 
 private :
     //Streams management
@@ -64,7 +94,6 @@ private :
     std::map<int8u, infos> Infos; // Key is the kind of IFD
     std::map<int32u, int8u> IFD_Offsets; // Value is the kind of IFD
     int8u OffsetFromContainer = 0;
-    int8u currentIFD;
     bool LittleEndian;
 
     //Helpers

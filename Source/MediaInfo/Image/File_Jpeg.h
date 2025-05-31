@@ -165,6 +165,7 @@ private :
     void APP1_XMP_Extension();
     void APP2();
     void APP2_ICC_PROFILE();
+    void APP2_MPF();
     void APP3() {Skip_XX(Element_Size, "Data");}
     void APP4() {Skip_XX(Element_Size, "Data");}
     void APP5() {Skip_XX(Element_Size, "Data");}

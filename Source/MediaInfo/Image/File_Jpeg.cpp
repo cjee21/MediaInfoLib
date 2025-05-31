@@ -1527,10 +1527,15 @@ void File_Jpeg::APP1_XMP_Extension()
 void File_Jpeg::APP2()
 {
     //Parsing
-    if (Element_Size>=14 && !strncmp((const char*)Buffer+Buffer_Offset, "ICC_PROFILE", 12))
+    if (Element_Size >= 14 && !strncmp((const char*)Buffer + Buffer_Offset, "ICC_PROFILE", 12)) {
         APP2_ICC_PROFILE();
-    else
-        Skip_XX(Element_Size,                                   "Data");
+        return;
+    }
+    if (Element_Size >= 4 && !strncmp((const char*)Buffer + Buffer_Offset, "MPF", 4)) {
+        APP2_MPF();
+        return;
+    }
+    Skip_XX(Element_Size, "Data");
 }
 
 //---------------------------------------------------------------------------
@@ -1570,6 +1575,22 @@ void File_Jpeg::APP2_ICC_PROFILE()
     #else
         Skip_XX(Element_Size-Element_Offset,                    "ICC profile");
     #endif
+}
+
+//---------------------------------------------------------------------------
+void File_Jpeg::APP2_MPF()
+{
+    Element_Info1("Multi-Picture Format");
+
+    Skip_String(4,                                              "MP Format Identifier");
+
+    //Parsing
+    File_Exif MI;
+    MI.currentIFD = File_Exif::Kind_MPFIndex;
+    Open_Buffer_Init(&MI);
+    Open_Buffer_Continue(&MI);
+    Open_Buffer_Finalize(&MI);
+    Merge(MI, Stream_General, 0, 0, false);
 }
 
 //---------------------------------------------------------------------------

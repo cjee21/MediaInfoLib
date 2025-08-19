@@ -12,6 +12,7 @@
 //---------------------------------------------------------------------------
 #include "MediaInfo/File__Analyze.h"
 #include "MediaInfo/TimeCode.h"
+#include <memory>
 //---------------------------------------------------------------------------
 
 namespace MediaInfoLib
@@ -200,6 +201,9 @@ private :
     TimeCode TimeStamp_FirstFrame;
     int16u   TimeStamp_FirstFrame_SampleNumber;
     size_t TimeStamp_Count;
+
+    // TrueHD
+    std::unique_ptr<int16u[]> CRC_16_Table_HD;
 };
 
 } //NameSpace

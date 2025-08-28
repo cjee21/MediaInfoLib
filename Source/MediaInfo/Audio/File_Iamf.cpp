@@ -22,11 +22,15 @@
 
 //---------------------------------------------------------------------------
 #include "MediaInfo/Audio/File_Iamf.h"
+#include "MediaInfo/MediaInfo_Internal.h"
 #ifdef MEDIAINFO_MPEG4_YES
     #include "MediaInfo/Multiple/File_Mpeg4_Descriptors.h"
 #endif
-#if defined(MEDIAINFO_FLAC_YES)
+#ifdef MEDIAINFO_FLAC_YES
     #include "MediaInfo/Audio/File_Flac.h"
+#endif
+#ifdef MEDIAINFO_OPUS_YES
+    #include "MediaInfo/Audio/File_Opus.h"
 #endif
 //---------------------------------------------------------------------------
 
@@ -68,8 +72,13 @@ namespace CodecIDs
 #define LOUDSPEAKERS_SS_CONVENTION  2
 #define BINAURAL                    3
 
+// animation_type
+#define STEP    0
+#define LINEAR  1
+#define BEZIER  2
+
 //---------------------------------------------------------------------------
-const char* Iamf_obu_type(int8u obu_type)
+static const char* Iamf_obu_type(int8u obu_type)
 {
     switch (obu_type)
     {
@@ -106,7 +115,7 @@ const char* Iamf_obu_type(int8u obu_type)
 }
 
 //---------------------------------------------------------------------------
-const char* Iamf_audio_element_type(int8u audio_element_type)
+static const char* Iamf_audio_element_type(int8u audio_element_type)
 {
     switch (audio_element_type)
     {
@@ -117,7 +126,7 @@ const char* Iamf_audio_element_type(int8u audio_element_type)
 }
 
 //---------------------------------------------------------------------------
-string Iamf_profile(int8u profile)
+static string Iamf_profile(int8u profile)
 {
     switch (profile)
     {
@@ -129,7 +138,7 @@ string Iamf_profile(int8u profile)
 }
 
 //---------------------------------------------------------------------------
-string Iamf_loudspeaker_layout(int8u loudspeaker_layout)
+static string Iamf_loudspeaker_layout(int8u loudspeaker_layout)
 {
     switch (loudspeaker_layout)
     {
@@ -145,6 +154,18 @@ string Iamf_loudspeaker_layout(int8u loudspeaker_layout)
     case 0x9: return "Binaural";
     case 0xF: return "Expanded channel layouts";
     default: return std::to_string(loudspeaker_layout);
+    }
+}
+
+//---------------------------------------------------------------------------
+static string Iamf_animation_type(int64u animation_type)
+{
+    switch (animation_type)
+    {
+    case STEP   : return "STEP";
+    case LINEAR : return "LINEAR";
+    case BEZIER : return "BEZIER";
+    default: return std::to_string(animation_type);
     }
 }
 
@@ -177,6 +198,15 @@ void File_Iamf::Streams_Accept()
     Stream_Prepare(Stream_Audio);
     Fill(Stream_Audio, 0, Audio_Format, "IAMF");
     Fill(Stream_Audio, 0, Audio_Format_Commercial_IfAny, "Eclipsa Audio");
+}
+
+//---------------------------------------------------------------------------
+void File_Iamf::Streams_Finish()
+{
+    if (Parser_Opus)
+        Parser_Opus->Finish();
+    if (Parser_Flac)
+        Parser_Flac->Finish();
 }
 
 //***************************************************************************
@@ -220,7 +250,6 @@ void File_Iamf::Read_Buffer_OutOfBand()
     Get_leb128  (        configOBUs_size,                       "configOBUs_size");
 
     Open_Buffer_Continue(Buffer, Buffer_Size);
-    Finish(); //stop once done with Descriptor OBUs, parsing for IA Data OBUs not yet implemented
 }
 
 //***************************************************************************
@@ -267,9 +296,9 @@ void File_Iamf::Data_Parse()
     case 0x00   : ia_codec_config(); break;
     case 0x01   : ia_audio_element(); break;
     case 0x02   : ia_mix_presentation(); break;
-    case 0x03   :
-    case 0x04   :
-    case 0x05   :
+    case 0x03   : ia_parameter_block(); break;
+    case 0x04   : ia_temporal_delimiter(); break;
+    case 0x05   : ia_audio_frame(true); break;
     case 0x06   :
     case 0x07   :
     case 0x08   :
@@ -287,9 +316,7 @@ void File_Iamf::Data_Parse()
     case 0x14   :
     case 0x15   :
     case 0x16   :
-    case 0x17   : Skip_XX(Element_Size - Element_Offset, "Data");
-                  Finish(); //stop once done with Descriptor OBUs, parsing for IA Data OBUs not yet implemented
-                  break;
+    case 0x17   : ia_audio_frame(false); break;
     case 0x1F   : ia_sequence_header(); break;
     default     : Skip_XX(Element_Size - Element_Offset, "Data"); break;
     }
@@ -346,18 +373,20 @@ void File_Iamf::ia_codec_config()
             switch (codec_id)
             {
             case CodecIDs::Opus: {
-                int32u sample_rate;
-                Skip_B1 (                                       "opus_version_id");
-                Skip_B1 (                                       "channel_count");
-                Skip_B2 (                                       "preskip");
-                Get_B4  (sample_rate,                           "rate");
-                Skip_B2 (                                       "ouput_gain");
-                Skip_B1 (                                       "channel_map");
+                if (!Parser_Opus) {
+                    #if defined(MEDIAINFO_OPUS_YES)
+                    auto MI = new File_Opus();
+                    MI->FromIamf = true;
+                    Open_Buffer_Init(MI);
+                    Parser_Opus.reset(MI);
+                }
+                Open_Buffer_Continue(Parser_Opus.get());
                 FILLING_BEGIN_PRECISE();
                     if (IsFirst) {
-                        Fill(Stream_Audio, 0, Audio_SamplingRate, sample_rate ? sample_rate : 48000);
+                        Merge(*Parser_Opus.get(), Stream_Audio, 0, 0, false);
                     }
                 FILLING_END();
+                #endif
                 break;
             }
             case CodecIDs::mp4a: {
@@ -377,15 +406,17 @@ void File_Iamf::ia_codec_config()
             }
             case CodecIDs::fLaC: {
                 #if defined(MEDIAINFO_FLAC_YES)
-                File_Flac MI;
-                MI.NoFileHeader = true;
-                MI.FromIamf = true;
-                Open_Buffer_Init(&MI);
-                Open_Buffer_Continue(&MI);
-                Open_Buffer_Finalize(&MI);
+                if (!Parser_Flac) {
+                    auto MI = new File_Flac();
+                    MI->NoFileHeader = true;
+                    MI->FromIamf = true;
+                    Open_Buffer_Init(MI);
+                    Parser_Flac.reset(MI);
+                }
+                Open_Buffer_Continue(Parser_Flac.get());
                 FILLING_BEGIN_PRECISE();
                     if (IsFirst) {
-                        Merge(MI, Stream_Audio, 0, 0, false);
+                        Merge(*Parser_Flac.get(), Stream_Audio, 0, 0, false);
                     }
                 FILLING_END();
                 #endif
@@ -413,6 +444,7 @@ void File_Iamf::ia_codec_config()
     Element_End0();
 
     FILLING_BEGIN_PRECISE();
+        codecs.insert({ codec_config_id, codec_id });
         if (IsFirst && num_samples_per_frame && Retrieve_Const(Stream_Audio, 0, Audio_SamplesPerFrame).empty()) {
             Fill(Stream_Audio, 0, Audio_SamplesPerFrame, num_samples_per_frame);
         }
@@ -423,9 +455,8 @@ void File_Iamf::ia_codec_config()
 void File_Iamf::ia_audio_element()
 {
     //Parsing
-    int64u audio_element_id, codec_config_id, num_substreams, audio_substream_id, num_parameters;
+    int64u audio_element_id, codec_config_id, num_substreams, num_parameters;
     int8u audio_element_type;
-    int16u default_mix_gain;
     Get_leb128 (        audio_element_id,                   "audio_element_id");
     BS_Begin();
     Get_S1 (     3,     audio_element_type,                 "audio_element_type"); Param_Info1(Iamf_audio_element_type(audio_element_type));
@@ -438,7 +469,9 @@ void File_Iamf::ia_audio_element()
         return;
     }
     for (int64u i = 0; i < num_substreams; ++i) {
+        int64u audio_substream_id;
         Get_leb128 (    audio_substream_id,                 "audio_substream_id");
+        substreams.insert({ audio_substream_id, codec_config_id });
     }
     Get_leb128 (        num_parameters,                     "num_parameters");
     if (num_parameters > Element_Size) {
@@ -475,18 +508,18 @@ void File_Iamf::ia_audio_element()
     switch (audio_element_type) {
     case CHANNEL_BASED: {
         Element_Begin1("scalable_channel_layout_config");
-            int8u num_layers;
             BS_Begin();
             Get_S1 (3,      num_layers,                     "num_layers");
             Skip_S1(5,                                      "reserved_for_future_use");
             BS_End();
             for (int8u i = 1; i <= num_layers; ++i) {
                 Element_Begin1("channel_audio_layer_config");
-                int8u output_gain_is_present_flag, loudspeaker_layout;
+                int8u loudspeaker_layout;
+                bool output_gain_is_present_flag, recon_gain_is_present_flag;
                 BS_Begin();
                 Get_S1 (4, loudspeaker_layout,              "loudspeaker_layout"); Param_Info1(Iamf_loudspeaker_layout(loudspeaker_layout));
-                Get_S1 (1, output_gain_is_present_flag,     "output_gain_is_present_flag");
-                Skip_S1(1,                                  "recon_gain_is_present_flag");
+                Get_SB (   output_gain_is_present_flag,     "output_gain_is_present_flag");
+                Get_SB (   recon_gain_is_present_flag,      "recon_gain_is_present_flag");
                 Skip_S1(2,                                  "reserved_for_future_use");
                 BS_End();
                 Skip_B1(                                    "substream_count");
@@ -501,6 +534,7 @@ void File_Iamf::ia_audio_element()
                 }
                 if (num_layers == 1 && loudspeaker_layout == 15)
                     Skip_B1(                                "expanded_loudspeaker_layout");
+                recon_gain_is_present_flag_Vec.push_back(recon_gain_is_present_flag);
                 Element_End0();
             }
         Element_End0();
@@ -524,7 +558,7 @@ void File_Iamf::ia_audio_element()
                     Get_B1(output_channel_count,            "output_channel_count");
                     Get_B1(substream_count,                 "substream_count");
                     Get_B1(coupled_substream_count,         "coupled_substream_count");
-                    Skip_XX(2*(substream_count+coupled_substream_count)*output_channel_count, "demixing_matrix");
+                    Skip_XX(2*static_cast<int64u>(substream_count+coupled_substream_count)*output_channel_count, "demixing_matrix");
                 Element_End0();
             }
         Element_End0();
@@ -664,7 +698,8 @@ void File_Iamf::ia_mix_presentation()
 //---------------------------------------------------------------------------
 void File_Iamf::ParamDefinition(int64u param_definition_type)
 {
-    int64u parameter_id, parameter_rate, duration, constant_subblock_duration, num_subblocks, subblock_duration;
+    //Parsing
+    int64u parameter_id, parameter_rate, duration{}, constant_subblock_duration{}, num_subblocks{}, subblock_duration;
     int8u param_definition_mode;
     Get_leb128  (       parameter_id,                       "parameter_id");
     Get_leb128  (       parameter_rate,                     "parameter_rate");
@@ -702,6 +737,155 @@ void File_Iamf::ParamDefinition(int64u param_definition_type)
     }
     if (param_definition_type == PARAMETER_DEFINITION_RECON_GAIN) {
     }
+
+    //Filling
+    FILLING_BEGIN();
+        ParamDefinitionData param_definition{};
+        param_definition.param_definition_type = param_definition_type;
+        param_definition.param_definition_mode = param_definition_mode;
+        param_definition.duration = duration;
+        param_definition.constant_subblock_duration = constant_subblock_duration;
+        param_definition.num_subblocks = num_subblocks;
+        param_definitions.insert({ parameter_id, param_definition });
+    FILLING_END();
+}
+
+//---------------------------------------------------------------------------
+void File_Iamf::ia_parameter_block()
+{
+    //Parsing
+    int64u parameter_id, subblock_duration;
+    Get_leb128    (parameter_id,                                "parameter_id");
+    auto& param_definition = param_definitions[parameter_id];
+    if (param_definition.param_definition_mode) {
+        Get_leb128(param_definition.duration,                   "duration");
+        Get_leb128(param_definition.constant_subblock_duration, "constant_subblock_duration");
+        if (param_definition.constant_subblock_duration == 0)
+            Get_leb128(param_definition.num_subblocks,          "num_subblocks");
+    }
+    if (param_definition.constant_subblock_duration) {
+        param_definition.num_subblocks = param_definition.duration / param_definition.constant_subblock_duration;
+        if (param_definition.duration % param_definition.constant_subblock_duration)
+            ++param_definition.num_subblocks;
+    }
+    if (param_definition.num_subblocks > Element_Size) {
+        Reject();
+        return;
+    }
+    for (int64u i = 0; i < param_definition.num_subblocks; ++i) {
+        if (param_definition.param_definition_mode) {
+            if (param_definition.constant_subblock_duration == 0)
+                Get_leb128(subblock_duration,                   "subblock_duration");
+        }
+        if (param_definition.param_definition_type == PARAMETER_DEFINITION_MIX_GAIN) {
+            Element_Begin1("mix_gain_parameter_data");
+                int64u animation_type;
+                Get_leb128(animation_type,                      "animation_type"); Param_Info1(Iamf_animation_type(animation_type));
+                Element_Begin1("param_data");
+                    switch (animation_type) {
+                    case STEP:
+                        Skip_B2(                                "start_point_value");
+                        break;
+                    case LINEAR:
+                        Skip_B2(                                "start_point_value");
+                        Skip_B2(                                "end_point_value");
+                        break;
+                    case BEZIER:
+                        Skip_B2(                                "start_point_value");
+                        Skip_B2(                                "end_point_value");
+                        Skip_B2(                                "control_point_value");
+                        Skip_B1(                                "control_point_relative_time");
+
+                    }
+                Element_End0();
+            Element_End0();
+        }
+        else if (param_definition.param_definition_type == PARAMETER_DEFINITION_DEMIXING) {
+            Element_Begin1("demixing_info_parameter_data");
+                BS_Begin();
+                Skip_S1(3,                                      "dmixp_mode");
+                Skip_S1(5,                                      "reserved_for_future_use");
+                BS_End();
+            Element_End0();
+        }
+        else if (param_definition.param_definition_type == PARAMETER_DEFINITION_RECON_GAIN) {
+            Element_Begin1("recon_gain_info_parameter_data");
+            for (int8u i = 0; i < num_layers; ++i) {
+                if (recon_gain_is_present_flag_Vec[i]) {
+                    int64u recon_gain_flags_i;
+                    Get_leb128(recon_gain_flags_i,              "recon_gain_flags");
+                    for (int8u j = 0; j < 12; ++j) {
+                        if ((recon_gain_flags_i >> j) & 1)
+                            Skip_B1(                            "recon_gain");
+                    }
+                }
+            }
+            Element_End0();
+        }
+        else {
+            int64u parameter_data_size;
+            Get_leb128(parameter_data_size,                     "parameter_data_size");
+            Skip_XX   (parameter_data_size,                     "parameter_data_bytes");
+        }
+    }
+
+    //Filling
+    FILLING_BEGIN_PRECISE();
+    FILLING_END();
+}
+
+//---------------------------------------------------------------------------
+void File_Iamf::ia_audio_frame(bool audio_substream_id_in_bitstream)
+{
+    //Parsing
+    int64u substream_id{};
+    if (audio_substream_id_in_bitstream)
+        Get_leb128(substream_id,                                "explicit_audio_substream_id");
+    else
+        substream_id = Element_Code - 6;
+
+    Element_Begin1("audio_frame");
+        #if MEDIAINFO_TRACE
+            auto& codec_id = codecs[substreams[substream_id]];
+            if (codec_id && Trace_Activated) {
+                switch (codec_id) {
+                    case CodecIDs::Opus: {
+                    #if defined(MEDIAINFO_OPUS_YES)
+                    if (Parser_Opus)
+                        Open_Buffer_Continue(Parser_Opus.get());
+                    #endif
+                    break;
+                }
+                case CodecIDs::fLaC:
+                    #if defined(MEDIAINFO_FLAC_YES)
+                    if (Parser_Flac)
+                        Open_Buffer_Continue(Parser_Flac.get());
+                    #endif
+                    break;
+                default:
+                    Skip_XX(Element_Size - Element_Offset,      "Data");
+                    break;
+                }
+            }
+            else
+        #endif // MEDIAINFO_TRACE
+                Skip_XX(Element_Size - Element_Offset,          "Data");
+    Element_End0();
+
+    //Filling
+    FILLING_BEGIN_PRECISE();
+        if (Config->ParseSpeed < 1) {
+            if (!Frame_Count_Valid)
+                Frame_Count_Valid = substreams.size() + 1;
+            ++Frame_Count;
+            if (Frame_Count >= Frame_Count_Valid)
+                Finish();
+        }
+        #if MEDIAINFO_TRACE
+            if (!Trace_Activated)
+        #endif // MEDIAINFO_TRACE
+                Finish();
+    FILLING_END();
 }
 
 //***************************************************************************

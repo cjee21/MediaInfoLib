@@ -58,11 +58,18 @@ namespace CodecIDs
 // audio_element_type
 #define CHANNEL_BASED   0
 #define SCENE_BASED     1
+#define OBJECT_BASED    2
 
 // param_definition_type
-#define PARAMETER_DEFINITION_MIX_GAIN   0
-#define PARAMETER_DEFINITION_DEMIXING   1
-#define PARAMETER_DEFINITION_RECON_GAIN 2
+#define PARAMETER_DEFINITION_MIX_GAIN       0
+#define PARAMETER_DEFINITION_DEMIXING       1
+#define PARAMETER_DEFINITION_RECON_GAIN     2
+#define PARAMETER_DEFINITION_POLAR          3
+#define PARAMETER_DEFINITION_CART_8         4
+#define PARAMETER_DEFINITION_CART_16        5
+#define PARAMETER_DEFINITION_DUAL_POLAR     6
+#define PARAMETER_DEFINITION_DUAL_CART_8    7
+#define PARAMETER_DEFINITION_DUAL_CART_16   8
 
 // ambisonics_mode
 #define MONO        0
@@ -107,7 +114,9 @@ static const char* Iamf_obu_type(int8u obu_type)
     case 0x15   : return "OBU_IA_Audio_Frame_ID15";
     case 0x16   : return "OBU_IA_Audio_Frame_ID16";
     case 0x17   : return "OBU_IA_Audio_Frame_ID17";
-    //  24~30   : Reserved for future use
+    //     24   : OBU_IA_Metadata
+    case 0x18   : return "OBU_IA_Metadata";
+    //  25~30   : Reserved for future use
     //     31   : OBU_IA_Sequence_Header
     case 0x1F   : return "OBU_IA_Sequence_Header";
     default     : return "";
@@ -121,6 +130,7 @@ static const char* Iamf_audio_element_type(int8u audio_element_type)
     {
     case CHANNEL_BASED  : return "CHANNEL_BASED";
     case SCENE_BASED    : return "SCENE_BASED";
+    case OBJECT_BASED   : return "OBJECT_BASED";
     default             : return "";
     }
 }
@@ -133,6 +143,9 @@ static string Iamf_profile(int8u profile)
     case   0: return "Simple Profile";
     case   1: return "Base Profile";
     case   2: return "Base-Enhanced Profile";
+    case   3: return "Base-Advanced Profile";
+    case   4: return "Advanced-1 Profile";
+    case   5: return "Advanced-2 Profile";
     default : return std::to_string(profile);
     }
 }
@@ -158,6 +171,35 @@ static string Iamf_loudspeaker_layout(int8u loudspeaker_layout)
 }
 
 //---------------------------------------------------------------------------
+static string Iamf_expanded_loudspeaker_layout(int8u expanded_loudspeaker_layout)
+{
+    switch (expanded_loudspeaker_layout)
+    {
+    case 0:  return "LFE";            // The low-frequency effects subset (LFE) of 7.1.4ch
+    case 1:  return "Stereo-S";       // The surround subset (Ls/Rs) of 5.1.4ch
+    case 2:  return "Stereo-SS";      // The side surround subset (Lss/Rss) of 7.1.4ch
+    case 3:  return "Stereo-RS";      // The rear surround subset (Lrs/Rrs) of 7.1.4ch
+    case 4:  return "Stereo-TF";      // The top front subset (Ltf/Rtf) of 7.1.4ch
+    case 5:  return "Stereo-TB";      // The top back subset (Ltb/Rtb) of 7.1.4ch
+    case 6:  return "Top-4ch";        // The top 4 channels (Ltf/Rtf/Ltb/Rtb) of 7.1.4ch
+    case 7:  return "3.0ch";          // The front 3 channels (L/C/R) of 7.1.4ch
+    case 8:  return "9.1.6ch";        // Loudspeaker location ordering of 9.1.6ch
+    case 9:  return "Stereo-F";       // The front subset (FL/FR) of 9.1.6ch
+    case 10: return "Stereo-Si";      // The side subset (SiL/SiR) of 9.1.6ch
+    case 11: return "Stereo-TpSi";    // The top side subset (TpSiL/TpSiR) of 9.1.6ch
+    case 12: return "Top-6ch";        // The top 6 channels (TpFL/TpFR/TpSiL/TpSiR/TpBL/TpBR) of 9.1.6ch
+    case 13: return "10.2.9.3ch";     // Loudspeaker location ordering of 10.2.9.3ch
+    case 14: return "LFE-Pair";       // The low-frequency effects subset (LFE1/LFE2) of 10.2.9.3ch
+    case 15: return "Bottom-3ch";     // The bottom 3 channels (BtFL/BtFC/BtFR) of 10.2.9.3ch
+    case 16: return "7.1.5.4ch";      // Loudspeaker location ordering of 7.1.5.4ch
+    case 17: return "Bottom-4ch";     // The bottom 4 channels (BtFL/BtFR/BtBL/BtBR) of 7.1.5.4ch
+    case 18: return "Top-1ch";        // The top subset (TpC) of 7.1.5.4ch
+    case 19: return "Top-5ch";        // The top 5 channels (Ltf/Rtf/TpC/Ltb/Rtb) of 7.1.5.4ch
+    default: return std::to_string(expanded_loudspeaker_layout);
+    }
+}
+
+//---------------------------------------------------------------------------
 static string Iamf_animation_type(int64u animation_type)
 {
     switch (animation_type)
@@ -166,6 +208,61 @@ static string Iamf_animation_type(int64u animation_type)
     case LINEAR : return "LINEAR";
     case BEZIER : return "BEZIER";
     default: return std::to_string(animation_type);
+    }
+}
+
+//---------------------------------------------------------------------------
+static string Iamf_headphones_rendering_mode(int8u headphones_rendering_mode)
+{
+    switch (headphones_rendering_mode)
+    {
+    case 0: return "HEADPHONES_RENDERING_MODE_STEREO";
+    case 1: return "HEADPHONES_RENDERING_MODE_BINAURAL_WORLD_LOCKED";
+    case 2: return "HEADPHONES_RENDERING_MODE_BINAURAL_HEAD_LOCKED";
+    default: return std::to_string(headphones_rendering_mode);
+    }
+}
+
+//---------------------------------------------------------------------------
+static string Iamf_binaural_filter_profile(int8u binaural_filter_profile)
+{
+    switch (binaural_filter_profile)
+    {
+    case 0: return "BINAURAL_FILTER_PROFILE_AMBIENT";
+    case 1: return "BINAURAL_FILTER_PROFILE_DIRECT";
+    case 2: return "BINAURAL_FILTER_PROFILE_REVERBERANT";
+    default: return std::to_string(binaural_filter_profile);
+    }
+}
+
+//---------------------------------------------------------------------------
+static string Iamf_loudness_info_type(int8u loudness_info_type)
+{
+    switch (loudness_info_type)
+    {
+    case 1U << 0: return "LOUDNESS_INFO_TYPE_TRUE_PEAK";
+    case 1U << 1: return "LOUDNESS_INFO_TYPE_ANCHORED_LOUDNESS";
+    case 1U << 2: return "LOUDNESS_INFO_TYPE_LIVE";
+    default: return std::to_string(loudness_info_type);
+    }
+}
+
+
+//---------------------------------------------------------------------------
+static string Iamf_parameter_definition_type(int64u parameter_definition_type)
+{
+    switch (parameter_definition_type)
+    {
+    case PARAMETER_DEFINITION_MIX_GAIN      : return "MIX_GAIN";
+    case PARAMETER_DEFINITION_DEMIXING      : return "DEMIXING";
+    case PARAMETER_DEFINITION_RECON_GAIN    : return "RECON_GAIN";
+    case PARAMETER_DEFINITION_POLAR         : return "POLAR";
+    case PARAMETER_DEFINITION_CART_8        : return "CART_8";
+    case PARAMETER_DEFINITION_CART_16       : return "CART_16";
+    case PARAMETER_DEFINITION_DUAL_POLAR    : return "DUAL_POLAR";
+    case PARAMETER_DEFINITION_DUAL_CART_8   : return "DUAL_CART_8";
+    case PARAMETER_DEFINITION_DUAL_CART_16  : return "DUAL_CART_16";
+    default: return std::to_string(parameter_definition_type);
     }
 }
 
@@ -210,6 +307,7 @@ void File_Iamf::Streams_Finish()
 
     Fill(Stream_Audio, 0, "NumberOfPresentations", mixpresentations.size());
     Fill(Stream_Audio, 0, "NumberOfSubstreams", substreams.size());
+    Fill(Stream_Audio, 0, "NumberOfObjects", num_objects_total);
 
     // Currently multiple ia_codec_config are not well handled //TODO: how to manage multiple ia_codec_config or if it changes midstream?
     if (!IsSub && Config->ParseSpeed >= 1 && Frame_Count && substreams.size() && codec_config_count == 1) {
@@ -277,12 +375,25 @@ void File_Iamf::Header_Parse()
 {
     //Parsing
     int8u obu_type;
-    bool obu_redundant_copy, obu_trimming_status_flag, obu_extension_flag;
+    bool obu_redundant_copy, obu_trimming_status_flag{}, obu_extension_flag;
     int64u obu_size, num_samples_to_trim_at_end, num_samples_to_trim_at_start, extension_header_size;
     BS_Begin();
     Get_S1      (5,     obu_type,                               "obu_type");
     Get_SB      (       obu_redundant_copy,                     "obu_redundant_copy");
-    Get_SB      (       obu_trimming_status_flag,               "obu_trimming_status_flag");
+    switch (obu_type) {
+    case 0x02: // OBU_IA_Mix_Presentation
+        Get_SB  (optional_fields_flag,                          "optional_fields_flag");
+        break;
+    case 0x04: // OBU_IA_Temporal_Delimiter
+        Skip_SB (                                               "is_not_key_frame");
+        break;
+    default:
+        if (obu_type >= 0x05 && obu_type <= 0x17)
+            Get_SB (    obu_trimming_status_flag,               "obu_trimming_status_flag");
+        else
+            Skip_SB(                                            "reserved");
+        break;
+    }
     Get_SB      (       obu_extension_flag,                     "obu_extension_flag");
     BS_End();
     Get_leb128  (       obu_size,                               "obu_size");
@@ -335,6 +446,7 @@ void File_Iamf::Data_Parse()
     case 0x15   :
     case 0x16   :
     case 0x17   : ia_audio_frame(false); break;
+    case 0x18   : ia_metadata(); break;
     case 0x1F   : ia_sequence_header(); break;
     default     : Skip_XX(Element_Size - Element_Offset, "Data"); break;
     }
@@ -551,8 +663,10 @@ void File_Iamf::ia_audio_element()
                     BS_End();
                     Get_B2(output_gain,                     "output_gain"); Param_Info1(static_cast<int16s>(output_gain));
                 }
-                if (num_layers == 1 && loudspeaker_layout == 15)
-                    Skip_B1(                                "expanded_loudspeaker_layout");
+                if (num_layers == 1 && loudspeaker_layout == 15) {
+                    int8u expanded_loudspeaker_layout;
+                    Get_B1(expanded_loudspeaker_layout, "expanded_loudspeaker_layout"); Param_Info1(Iamf_expanded_loudspeaker_layout(expanded_loudspeaker_layout));
+                }
                 recon_gain_is_present_flag_Vec.push_back(recon_gain_is_present_flag);
                 Element_End0();
             }
@@ -581,6 +695,19 @@ void File_Iamf::ia_audio_element()
                 Element_End0();
             }
         Element_End0();
+        break;
+    }
+    case OBJECT_BASED: {
+        Element_Begin1("objects_config");
+        int64u objects_config_size;
+        int8u num_objects;
+        Get_leb128(objects_config_size,                     "objects_config_size");
+        Get_B1(num_objects,                                 "num_objects");
+        Skip_XX(objects_config_size - 1,                    "objects_config_extension_bytes");
+        Element_End0();
+        FILLING_BEGIN_PRECISE();
+            num_objects_total += num_objects;
+        FILLING_END();
         break;
     }
     default: {
@@ -634,14 +761,7 @@ void File_Iamf::ia_mix_presentation()
                 Skip_B1(                                    "zero");
             }
             Element_Begin1("rendering_config");
-                int8u headphones_rendering_mode;
-                int64u rendering_config_extension_size;
-                BS_Begin();
-                Get_S1  (2, headphones_rendering_mode,      "headphones_rendering_mode");  Param_Info1(!headphones_rendering_mode?"Stereo":headphones_rendering_mode==1?"Binaural":"Reserved");
-                Skip_S1 (6,                                 "reserved_for_future_use");
-                BS_End();
-                Get_leb128(rendering_config_extension_size, "rendering_config_extension_size");
-                Skip_XX (  rendering_config_extension_size, "rendering_config_extension_bytes");
+                RenderingConfig();
             Element_End0();
             Element_Begin1("element_mix_gain");
                 ParamDefinition(PARAMETER_DEFINITION_MIX_GAIN);
@@ -673,7 +793,7 @@ void File_Iamf::ia_mix_presentation()
             Element_Begin1("loudness");
             int16u integrated_loudness, digital_peak;
                 int8u info_type;
-                Get_B1( info_type,                          "info_type");
+                Get_B1( info_type,                          "info_type"); Param_Info1(Iamf_loudness_info_type(info_type));
                 Get_B2( integrated_loudness,                "integrated_loudness"); Param_Info1(static_cast<int16s>(integrated_loudness));
                 Get_B2( digital_peak,                       "digital_peak"); Param_Info1(static_cast<int16s>(digital_peak));
                 if (info_type & 1) {
@@ -696,7 +816,7 @@ void File_Iamf::ia_mix_presentation()
             Element_End0();
         }
     }
-    if (Element_Size > Element_Offset) {
+    if (optional_fields_flag || Element_Size > Element_Offset) {
         Element_Begin1("mix_presentation_tags");
             int8u num_tags;
             Get_B1(num_tags,                                "num_tags");
@@ -707,6 +827,15 @@ void File_Iamf::ia_mix_presentation()
                 Skip_B1("zero");
             }
         Element_End0();
+        if (optional_fields_flag) {
+            Element_Begin1("mix_presentation_optional_fields");
+            int64u optional_fields_size;
+            Get_leb128(optional_fields_size,                "optional_fields_size");
+            Skip_B1(                                        "preferred_loudspeaker_renderer");
+            Skip_B1(                                        "preferred_binaural_renderer");
+            Skip_XX(optional_fields_size - 2,               "optional_fields_remaining_bytes");
+            Element_End0();
+        }
     }
 
     //Filling
@@ -759,6 +888,55 @@ void File_Iamf::ParamDefinition(int64u param_definition_type)
     }
     if (param_definition_type == PARAMETER_DEFINITION_RECON_GAIN) {
     }
+    if (param_definition_type == PARAMETER_DEFINITION_POLAR) {
+        Element_Name("polar_param_definition");
+        BS_Begin();
+        Skip_S2(9,                                          "default_azimuth");
+        Skip_S1(8,                                          "default_elevation");
+        Skip_S1(7,                                          "default_distance");
+        BS_End();
+    }
+    if (param_definition_type == PARAMETER_DEFINITION_CART_8) {
+        Element_Name("cart8_param_definition");
+        Skip_B1(                                            "default_x");
+        Skip_B1(                                            "default_y");
+        Skip_B1(                                            "default_z");
+    }
+    if (param_definition_type == PARAMETER_DEFINITION_CART_16) {
+        Element_Name("cart16_param_definition");
+        Skip_B2(                                            "default_x");
+        Skip_B2(                                            "default_y");
+        Skip_B2(                                            "default_z");
+    }
+    if (param_definition_type == PARAMETER_DEFINITION_DUAL_POLAR) {
+        Element_Name("dual_polar_param_definition");
+        BS_Begin();
+        Skip_S2(9,                                          "default_first_azimuth");
+        Skip_S1(8,                                          "default_first_elevation");
+        Skip_S1(7,                                          "default_first_distance");
+        Skip_S2(9,                                          "default_second_azimuth");
+        Skip_S1(8,                                          "default_second_elevation");
+        Skip_S1(7,                                          "default_second_distance");
+        BS_End();
+    }
+    if (param_definition_type == PARAMETER_DEFINITION_DUAL_CART_8) {
+        Element_Name("dual_cart8_param_definition");
+        Skip_B1(                                            "default_first_x");
+        Skip_B1(                                            "default_first_y");
+        Skip_B1(                                            "default_first_z");
+        Skip_B1(                                            "default_second_x");
+        Skip_B1(                                            "default_second_y");
+        Skip_B1(                                            "default_second_z");
+    }
+    if (param_definition_type == PARAMETER_DEFINITION_DUAL_CART_16) {
+        Element_Name("dual_cart16_param_definition");
+        Skip_B2(                                            "default_first_x");
+        Skip_B2(                                            "default_first_y");
+        Skip_B2(                                            "default_first_z");
+        Skip_B2(                                            "default_second_x");
+        Skip_B2(                                            "default_second_y");
+        Skip_B2(                                            "default_second_z");
+    }
 
     //Filling
     FILLING_BEGIN();
@@ -770,6 +948,77 @@ void File_Iamf::ParamDefinition(int64u param_definition_type)
         param_definition.num_subblocks = num_subblocks;
         param_definitions.insert({ parameter_id, param_definition });
     FILLING_END();
+}
+
+//---------------------------------------------------------------------------
+void File_Iamf::RenderingConfig()
+{
+    int8u headphones_rendering_mode, binaural_filter_profile;
+    bool element_gain_offset_flag;
+    int64u rendering_config_extension_size;
+    BS_Begin();
+    Get_S1    (2, headphones_rendering_mode,                    "headphones_rendering_mode"); Param_Info1(Iamf_headphones_rendering_mode(headphones_rendering_mode));
+    Get_SB    (element_gain_offset_flag,                        "element_gain_offset_flag");
+    Get_S1    (2, binaural_filter_profile,                      "binaural_filter_profile"); Param_Info1(Iamf_binaural_filter_profile(binaural_filter_profile));
+    Skip_S1   (3,                                               "reserved");
+    BS_End();
+    Get_leb128(rendering_config_extension_size,                 "rendering_config_extension_size");
+    auto Element_Offset_Ext_Begin = Element_Offset;
+    if (rendering_config_extension_size) {
+        int64u num_parameters;
+        Get_leb128(num_parameters,                              "num_parameters");
+        if (num_parameters > Element_Size) {
+            Reject();
+            return;
+        }
+        for (int64u i = 0; i < num_parameters; ++i) {
+            int64u param_definition_type;
+            Get_leb128(param_definition_type,                   "param_definition_type"); Param_Info1(Iamf_parameter_definition_type(param_definition_type));
+            if (param_definition_type >= PARAMETER_DEFINITION_POLAR && param_definition_type <= PARAMETER_DEFINITION_DUAL_CART_16) {
+                Element_Begin0();
+                    ParamDefinition(param_definition_type);
+                Element_End0();
+            }
+            else {
+                int64u rendering_config_params_extension_size;
+                Get_leb128(rendering_config_params_extension_size, "rendering_config_params_extension_size");
+                Skip_XX(rendering_config_params_extension_size, "rendering_config_params_extension_bytes");
+            }
+        }
+        if (element_gain_offset_flag) {
+            Element_Begin1("element_gain_offset_config");
+            int8u element_gain_offset_config_type;
+            int64u element_gain_offset_size;
+            Get_B1(element_gain_offset_config_type,             "element_gain_offset_config_type");
+            Param_Info1(element_gain_offset_config_type == 0 ? "VALUE_TYPE" : element_gain_offset_config_type == 1 ? "RANGE_TYPE" : "");
+            switch (element_gain_offset_config_type) {
+            case 0: // value type
+                int16u element_gain_offset;
+                Get_B2(element_gain_offset,                     "element_gain_offset");
+                Param_Info1(static_cast<int16s>(element_gain_offset));
+                Param_Info2(static_cast<double>(static_cast<int16s>(element_gain_offset)) / 256, " dB");
+                break;
+            case 1: // range type
+                int16u default_element_gain_offset, min_element_gain_offset, max_element_gain_offset;
+                Get_B2(default_element_gain_offset,             "default_element_gain_offset");
+                Param_Info1(static_cast<int16s>(default_element_gain_offset));
+                Param_Info2(static_cast<double>(static_cast<int16s>(default_element_gain_offset)) / 256, " dB");
+                Get_B2(min_element_gain_offset,                 "min_element_gain_offset");
+                Param_Info1(static_cast<int16s>(min_element_gain_offset));
+                Param_Info2(static_cast<double>(static_cast<int16s>(min_element_gain_offset)) / 256, " dB");
+                Get_B2(max_element_gain_offset,                 "max_element_gain_offset");
+                Param_Info1(static_cast<int16s>(max_element_gain_offset));
+                Param_Info2(static_cast<double>(static_cast<int16s>(max_element_gain_offset)) / 256, " dB");
+                break;
+            default: // extension type
+                Get_leb128(element_gain_offset_size,            "element_gain_offset_size");
+                Skip_XX   (element_gain_offset_size,            "element_gain_offset_bytes");
+            }
+            Element_End0();
+        }
+    }
+    auto N = Element_Offset - Element_Offset_Ext_Begin;
+    Skip_XX   (rendering_config_extension_size - N,             "rendering_config_extension_bytes");
 }
 
 //---------------------------------------------------------------------------
@@ -907,6 +1156,64 @@ void File_Iamf::ia_audio_frame(bool audio_substream_id_in_bitstream)
             if (Frame_Count > Frame_Count_Valid)
                 Finish();
         }
+    FILLING_END();
+}
+
+//---------------------------------------------------------------------------
+void File_Iamf::ia_metadata()
+{
+    //Parsing
+    int64u metadata_type{};
+    Get_leb128(metadata_type,                                   "metadata_type");
+
+    switch (metadata_type)
+    {
+    case 1: Param_Info1("METADATA_TYPE_ITUT_T35"); metadata_itu_t_t35(); break;
+    case 2: Param_Info1("METADATA_TYPE_IAMF_TAGS"); metadata_iamf_tags(); break;
+    }
+
+    // TODO: Parse metadata fully
+    Skip_XX(Element_Size - Element_Offset, metadata_type == 1 ? "itu_t_t35_payload_bytes" : "Metadata");
+}
+
+//---------------------------------------------------------------------------
+void File_Iamf::metadata_itu_t_t35()
+{
+    //Parsing
+    int8u itu_t_t35_country_code;
+    Get_B1(itu_t_t35_country_code,                              "itu_t_t35_country_code");
+    if (itu_t_t35_country_code == 0xFF)
+        Skip_B1(                                                "itu_t_t35_country_code_extension_byte");
+
+    switch (itu_t_t35_country_code)
+    {
+    case 0xB5: Param_Info1("United States"); break;
+    }
+}
+
+//---------------------------------------------------------------------------
+void File_Iamf::metadata_iamf_tags()
+{
+    int8u num_tags;
+    Get_B1(num_tags,                                            "num_tags");
+
+    ZtringListList tags;
+    for (int8u i = 0; i < num_tags; ++i) {
+        Element_Begin1("tag");
+        Ztring tag_name, tag_value;
+        Get_UTF8(SizeUpTo0(), tag_name,                         "tag_name");
+        Skip_B1("zero");
+        Get_UTF8(SizeUpTo0(), tag_value,                        "tag_value");
+        Skip_B1("zero");
+        tags(i, 0) = tag_name;
+        tags(i, 1) = tag_value;
+        Element_End0();
+    }
+
+    FILLING_BEGIN_PRECISE();
+    for (int8u i = 0; i < tags.size(); ++i) {
+        Fill(IsSub ? Stream_Audio : Stream_General, 0, tags(i, 0).To_UTF8().c_str(), tags(i, 1));
+    }
     FILLING_END();
 }
 
